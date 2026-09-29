@@ -15,6 +15,7 @@ const state = {
   finishedAt: 0,
   filter: "gaps",
   phase: "start",
+  sendNote: "",
 };
 
 function esc(s) {
@@ -148,7 +149,7 @@ function renderStart(saved) {
       </div>`
     : "";
   $app.innerHTML = `
-    <p class="kicker">تمرين قرار قبل الواجب الرسمي · المعلمة سناء البنا</p>
+    <p class="kicker">تمرين قرار قبل الواجب الرسمي</p>
     <h1>الأنسب هنا غير الأنسب هناك</h1>
     <p class="lead">ستون موقف عمل. في كل موقف ستة خيارات، والمطلوب ثلاثة فقط. الأداة الممتازة لشركة قد تكون خطأً لميزانية ثانية أو أولوية ثانية.</p>
     <div class="stats">
@@ -162,7 +163,7 @@ function renderStart(saved) {
         <li>اكتب اسمك. يظهر على الشاشة وفي ملف الإكسل.</li>
         <li>اقرأ نوع المؤسسة والميزانية والأولوية قبل الخيارات.</li>
         <li>لا تبحث عن «الجهاز الأقوى». ابحث عما يخدم هذه المهمة الآن.</li>
-        <li>بعد التسليم سترى لماذا ناسب كل خيار ولماذا رُفض، حتى الذي أصبته.</li>
+        <li>بعد التسليم تظهر أخطاؤك أولًا: ماذا اخترت، لماذا لا يناسب هذه الشركة، وما كان الأنسب ولماذا.</li>
       </ul>
       <form class="form" id="start-form">
         <div class="form-row">
@@ -382,6 +383,7 @@ function renderResults() {
         <p class="verdict">${esc(v.title)}</p>
         <p>${esc(v.text)}</p>
         <p>الدرجة ${report.earned} من ${report.max} · الوقت ${durationText()} · فجوات ${gaps} من 60</p>
+        ${state.sendNote ? `<p>${esc(state.sendNote)}</p>` : ""}
         <div class="row-btns">
           <button class="btn" type="button" id="excel">تنزيل Excel</button>
           <button class="btn ghost" type="button" id="again">محاولة جديدة</button>
@@ -399,10 +401,14 @@ function renderResults() {
           </div>
         `).join("")}
       </div>
-      <p>هذا تمرين قرار قبل الواجب الرسمي، لا علامة الواجب نفسه. اقرأ القاعدة ثم سبب كل خيار، بما فيه الذي اخترته صح.</p>
+      <p>هذا تمرين قرار قبل الواجب الرسمي، لا علامة الواجب نفسه.</p>
+    </section>
+    <section class="panel review-head">
+      <h2>مراجعة الأخطاء</h2>
+      <p>كل بطاقة مفتوحة تعرض اختيارك، لماذا لا يناسب قيد هذه الشركة، والقرار الأنسب مع سببه. ابدأ من الفجوات.</p>
     </section>
     <div class="filters">
-      <button class="btn ghost${state.filter === "gaps" ? " on" : ""}" type="button" data-filter="gaps">الفجوات أولًا</button>
+      <button class="btn ghost${state.filter === "gaps" ? " on" : ""}" type="button" data-filter="gaps">أخطائي</button>
       <button class="btn ghost${state.filter === "all" ? " on" : ""}" type="button" data-filter="all">الستون كلهم</button>
       ${AIMS.map((a) => `<button class="btn ghost${state.filter === a.id ? " on" : ""}" type="button" data-filter="${a.id}">${a.ar}</button>`).join("")}
     </div>
@@ -435,36 +441,51 @@ function paintLessons(report) {
   if (state.filter === "gaps") rows = rows.filter((r) => r.hit < 3);
   else if (state.filter !== "all") rows = rows.filter((r) => r.q.aim === state.filter);
   if (!rows.length) {
-    host.innerHTML = `<section class="panel"><p>لا فجوات في هذا العرض. افتح «الستون كلهم» واقرأ القواعد حتى يثبت السبب لا الجواب فقط.</p></section>`;
+    host.innerHTML = `<section class="panel"><p>لا أخطاء في هذا العرض. افتح «الستون كلهم» إذا أردت مراجعة سبب كل قرار.</p></section>`;
     return;
   }
   host.innerHTML = rows.map((r) => lessonHtml(r)).join("");
+}
+
+function choiceCard(o, tone, label) {
+  return `<div class="choice ${tone}">
+    <span class="tag ${tone === "bad" ? "no" : "ok"}">${label}</span>
+    <p><strong>${esc(o.text)}</strong><br />${esc(o.why)}</p>
+  </div>`;
 }
 
 function lessonHtml(r) {
   const q = r.q;
   const aim = aimOf(q.aim);
   const chosen = new Set(state.picks[q.id] || []);
+  const pickedRight = q.options.filter((o) => chosen.has(o.id) && o.ok);
+  const pickedWrong = q.options.filter((o) => chosen.has(o.id) && !o.ok);
+  const missedRight = q.options.filter((o) => o.ok && !chosen.has(o.id));
   const open = r.hit < 3 ? " open" : "";
+  const missBlock = r.hit < 3 ? `
+    <h3>ما اخترته ولا يناسب هذه الشركة</h3>
+    ${pickedWrong.map((o) => choiceCard(o, "bad", "اختيارك · غير مناسب هنا")).join("") || "<p>لم يُسجَّل اختيار خاطئ.</p>"}
+    <h3>الأنسب الذي لم تختره، ولماذا</h3>
+    ${missedRight.map((o) => choiceCard(o, "good", "فاتك · هذا الأنسب")).join("")}
+  ` : `
+    <h3>لماذا هذه الثلاثة هي الأنسب هنا</h3>
+    ${q.options.filter((o) => o.ok).map((o) => choiceCard(o, "good", "مناسب لهذا القيد")).join("")}
+  `;
+  const kept = pickedRight.length && r.hit < 3
+    ? `<h3>ما أصبته ضمن الثلاثة</h3>${pickedRight.map((o) => choiceCard(o, "good", "اختيارك · مناسب")).join("")}`
+    : "";
   return `
     <details class="lesson${r.hit < 3 ? " miss" : ""}"${open}>
       <summary>
-        <span>${r.i + 1}. ${esc(q.org)}</span>
+        <span>${r.i + 1}. ${esc(q.org)} · ${esc(q.topic)}</span>
         <span class="tag ${r.hit === 3 ? "ok" : "no"}">${r.hit}/3</span>
       </summary>
       <div class="body">
-        <p><span class="aim-pill">${esc(aim.ar)} · ${esc(q.topic)}</span></p>
+        <p><span class="aim-pill">${esc(aim.ar)} · ${esc(aim.title)}</span></p>
         <p>${esc(q.scene)}</p>
         <p class="rule">${esc(q.rule)}</p>
-        ${q.options.map((o) => {
-          const mine = chosen.has(o.id);
-          const label = o.ok ? "يناسب هذا القيد" : "لا يناسب هذا القيد";
-          const mineTxt = mine ? " · اخترته" : "";
-          return `<div class="choice">
-            <span class="tag ${o.ok ? "ok" : "no"}">${label}${mineTxt}</span>
-            <p><strong>${esc(o.text)}</strong><br />${esc(o.why)}</p>
-          </div>`;
-        }).join("")}
+        ${missBlock}
+        ${kept}
       </div>
     </details>
   `;
@@ -493,7 +514,6 @@ function downloadExcel(report) {
     ["من", report.max],
     ["النسبة", report.percent],
     ["التقدير", v.title],
-    ["المعلمة", "سناء البنا"],
     ["الحقوق", COPYRIGHT],
   ];
   report.byAim.forEach((a) => summary.push([a.ar + " " + a.title, a.percent]));
@@ -529,23 +549,55 @@ function sheetsUrl() {
   return String((window.FIT_CLOUD || {}).sheetsUrl || "").trim();
 }
 
-function sendCloud(report) {
-  const url = sheetsUrl();
-  if (!url) return;
-  const body = JSON.stringify({
+function cloudPayload(report) {
+  const v = verdict(report.percent, report.byAim);
+  const weak = report.byAim.filter((a) => a.percent < 70).map((a) => a.ar + " " + a.title);
+  return {
+    kind: "fit",
     name: state.name,
     klass: state.klass,
-    percent: report.percent,
+    startedAt: state.startedAt ? new Date(state.startedAt).toLocaleString("ar-JO") : "",
+    finishedAt: state.finishedAt ? new Date(state.finishedAt).toLocaleString("ar-JO") : "",
+    durationText: durationText(),
     earned: report.earned,
     max: report.max,
-    finishedAt: new Date(state.finishedAt).toISOString(),
-    aims: report.byAim.map((a) => ({ id: a.id, percent: a.percent })),
-    answers: report.rows.map((r) => ({
-      id: r.q.id,
-      hit: r.hit,
-      picked: state.picks[r.q.id] || [],
+    percent: report.percent,
+    band: v.title,
+    weakAims: weak.join(" | "),
+    aims: report.byAim.map((a) => ({
+      id: a.id,
+      title: a.title,
+      earned: a.earned,
+      max: a.max,
+      percent: a.percent,
     })),
-  });
+    details: report.rows.map((r) => {
+      const chosen = r.q.options.filter((o) => (state.picks[r.q.id] || []).includes(o.id)).map((o) => o.text).join(" | ");
+      const correct = r.q.options.filter((o) => o.ok).map((o) => o.text).join(" | ");
+      return {
+        num: r.i + 1,
+        aim: aimOf(r.q.aim).ar,
+        topic: r.q.topic,
+        org: r.q.org,
+        chosen: chosen,
+        correct: correct,
+        hit: r.hit,
+        max: 3,
+        result: r.hit === 3 ? "كامل" : (r.hit === 0 ? "غير مناسب" : "جزئي"),
+        rule: r.q.rule,
+      };
+    }),
+  };
+}
+
+function sendCloud(report) {
+  const url = sheetsUrl();
+  if (!url) {
+    state.sendNote = "";
+    return;
+  }
+  const body = JSON.stringify(cloudPayload(report));
+  state.sendNote = "أُرسلت النتيجة إلى الجدول.";
   const form = document.createElement("form");
   form.method = "POST";
   form.action = url;
